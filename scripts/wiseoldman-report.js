@@ -58,7 +58,16 @@ async function postDiscordEmbed(embed){
 }
 
 function makeEmbed(title, fields, color=0xE09F76){
-  return { title, color, fields, timestamp: new Date().toISOString() };
+  const avatarUrl = `https://wiseoldman.net/players/${PLAYER}/avatar`;
+  return {
+    title,
+    color,
+    author: { name: PLAYER, icon_url: avatarUrl },
+    thumbnail: { url: avatarUrl },
+    fields,
+    footer: { text: 'OSRS Daily Update', icon_url: 'https://wiseoldman.net/favicon.png' },
+    timestamp: new Date().toISOString()
+  };
 }
 
 async function notifyError(err){
