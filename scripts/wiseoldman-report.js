@@ -9,58 +9,66 @@ if(!WEBHOOK){
   process.exit(2);
 }
 
+async function fetchWithRetries(url, options = {}, attempts = 3, delayMs = 1000){
+  for(let i=0;i<attempts;i++){
+    try{
+      const res = await fetch(url, options);
+      if(!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    }catch(e){
+      if(i === attempts-1) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 async function fetchTimeline(metric='overall', limit=30){
   const url = `https://api.wiseoldman.net/v2/players/${PLAYER}/snapshots/timeline?metric=${metric}&limit=${limit}`;
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if(!res.ok){
-    throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
+  return fetchWithRetries(url, { headers: { 'User-Agent': USER_AGENT } }, 4, 1200);
 }
 
 function parseTimeline(timeline){
-  // timeline is array of {value, rank, date}
-  // normalize to sorted ascending by date
   return timeline.map(t => ({ date: new Date(t.date), value: Number(t.value), rank: t.rank }))
     .sort((a,b)=>a.date - b.date);
 }
 
 function computeDeltas(timeline){
-  if(timeline.length < 2) return null;
+  if(!timeline || timeline.length < 2) return null;
   const latest = timeline[timeline.length-1];
-  // find previous snapshot older than 24h
   const oneDayAgo = new Date(latest.date.getTime() - 24*60*60*1000);
   let prev = null;
-  for(let i=timeline.length-1;i>=0;i--){
-    if(timeline[i].date <= oneDayAgo){ prev = timeline[i]; break; }
-  }
-  // fallback: use previous element
+  for(let i=timeline.length-1;i>=0;i--){ if(timeline[i].date <= oneDayAgo){ prev = timeline[i]; break; } }
   if(!prev) prev = timeline[timeline.length-2];
   const daysWindow = 7;
-  // compute 7-day window start
   const sevenDaysAgo = new Date(latest.date.getTime() - daysWindow*24*60*60*1000);
   const windowPoints = timeline.filter(t => t.date >= sevenDaysAgo && t.date <= latest.date);
   const firstInWindow = windowPoints.length ? windowPoints[0] : timeline[0];
-
   const deltaYesterday = latest.value - prev.value;
   const delta7days = latest.value - firstInWindow.value;
   const avgPerDay7 = delta7days / daysWindow;
-
-  return {
-    latest: latest,
-    prev: prev,
-    deltaYesterday,
-    delta7days,
-    avgPerDay7
-  };
+  return { latest, prev, deltaYesterday, delta7days, avgPerDay7 };
 }
 
 function formatNumber(n){ return n.toLocaleString('en-GB'); }
 
-async function postDiscord(message){
-  const payload = { content: message };
+async function postDiscordEmbed(embed){
+  const payload = { embeds: [embed] };
   const res = await fetch(WEBHOOK, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type':'application/json' } });
   if(!res.ok) throw new Error(`Discord webhook failed: ${res.status}`);
+}
+
+function makeEmbed(title, fields, color=0xE09F76){
+  return { title, color, fields, timestamp: new Date().toISOString() };
+}
+
+async function notifyError(err){
+  try{
+    const embed = makeEmbed('OSRS Daily Update — Error', [
+      { name: 'Player', value: PLAYER, inline: true },
+      { name: 'Error', value: String(err).slice(0, 2000), inline: false }
+    ], 0xFF3333);
+    await postDiscordEmbed(embed);
+  }catch(e){ console.error('Failed to post error to Discord:', e.message); }
 }
 
 (async ()=>{
@@ -74,44 +82,49 @@ async function postDiscord(message){
     const od = computeDeltas(overall);
     const sd = computeDeltas(slayer);
 
-    // Slayer ETA to 99
-    const SLAYER_99_XP = 13034431; // XP required for 99 Slayer
+    if(!od || !sd){ throw new Error('Insufficient timeline data'); }
+
+    const SLAYER_99_XP = 13034431;
     const currentSlayerXp = slayer.length ? slayer[slayer.length-1].value : 0;
     const remaining = SLAYER_99_XP - currentSlayerXp;
     const avg7 = sd ? sd.avgPerDay7 : 0;
     const estDays = avg7 > 0 ? Math.ceil(remaining / avg7) : null;
     const estDate = estDays ? new Date(Date.now() + estDays*24*60*60*1000).toISOString().slice(0,10) : 'unknown';
 
-    const msg = [];
-    msg.push(`**OSRS Daily Update — ${PLAYER}**`);
     const isMonday = (new Date()).getUTCDay() === 1; // Monday=1
+    const title = `OSRS Daily Update — ${PLAYER}`;
+    const fields = [];
+
     if(isMonday){
-      msg.push(`Overall: ${formatNumber(od.latest.value)} XP`);
-      msg.push(`Last 7 days: +${formatNumber(od.delta7days)} XP (avg ${formatNumber(Math.round(od.avgPerDay7))}/day)`);
-      msg.push(``);
-      msg.push(`Slayer: ${formatNumber(currentSlayerXp)} XP`);
-      msg.push(`Last 7 days (slayer): +${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`);
-      msg.push(`Remaining to 99 Slayer: ${formatNumber(remaining)} XP`);
-      msg.push(estDays ? `Estimated days to 99 (7-day avg): ${estDays} days — approx ${estDate}` : `Estimated days to 99: unknown (no recent progress)`);
-      msg.push(`Weekly summary generated for previous week.`);
-      msg.push(`https://wiseoldman.net/players/${PLAYER}`);
+      fields.push({ name: 'Overall (now)', value: `${formatNumber(od.latest.value)} XP`, inline: true });
+      fields.push({ name: '7-day total', value: `+${formatNumber(od.delta7days)} XP`, inline: true });
+      fields.push({ name: '\u200b', value: '\u200b', inline: false });
+      fields.push({ name: 'Slayer (now)', value: `${formatNumber(currentSlayerXp)} XP`, inline: true });
+      fields.push({ name: 'Slayer 7-day', value: `+${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`, inline: true });
+      fields.push({ name: 'Remaining to 99 Slayer', value: `${formatNumber(remaining)} XP`, inline: false });
+      fields.push({ name: 'ETA (7-day avg)', value: estDays ? `${estDays} days — approx ${estDate}` : 'unknown', inline: false });
+      fields.push({ name: 'Link', value: `https://wiseoldman.net/players/${PLAYER}`, inline: false });
     } else {
-      msg.push(`Overall: ${formatNumber(od.latest.value)} XP`);
-      msg.push(`Yesterday: +${formatNumber(od.deltaYesterday)} XP`);
-      msg.push(`7-day: +${formatNumber(od.delta7days)} XP (avg ${formatNumber(Math.round(od.avgPerDay7))}/day)`);
-      msg.push(``);
-      msg.push(`Slayer: ${formatNumber(currentSlayerXp)} XP`);
-      msg.push(`Yesterday (slayer): +${formatNumber(sd.deltaYesterday)} XP`);
-      msg.push(`7-day (slayer): +${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`);
-      msg.push(`Remaining to 99 Slayer: ${formatNumber(remaining)} XP`);
-      msg.push(estDays ? `Estimated days to 99 (7-day avg): ${estDays} days — approx ${estDate}` : `Estimated days to 99: unknown (no recent progress)`);
-      msg.push(`https://wiseoldman.net/players/${PLAYER}`);
+      fields.push({ name: 'Overall (now)', value: `${formatNumber(od.latest.value)} XP`, inline: true });
+      fields.push({ name: 'Yesterday', value: `+${formatNumber(od.deltaYesterday)} XP`, inline: true });
+      fields.push({ name: '7-day avg', value: `${formatNumber(Math.round(od.avgPerDay7))}/day`, inline: true });
+      fields.push({ name: '\u200b', value: '\u200b', inline: false });
+      fields.push({ name: 'Slayer (now)', value: `${formatNumber(currentSlayerXp)} XP`, inline: true });
+      fields.push({ name: 'Yesterday (slayer)', value: `+${formatNumber(sd.deltaYesterday)} XP`, inline: true });
+      fields.push({ name: 'Slayer 7-day avg', value: `${formatNumber(Math.round(sd.avgPerDay7))}/day`, inline: true });
+      fields.push({ name: 'Remaining to 99 Slayer', value: `${formatNumber(remaining)} XP`, inline: false });
+      fields.push({ name: 'ETA (7-day avg)', value: estDays ? `${estDays} days — approx ${estDate}` : 'unknown', inline: false });
+      fields.push({ name: 'Link', value: `https://wiseoldman.net/players/${PLAYER}`, inline: false });
     }
 
-    await postDiscord(msg.join('\n'));
-    console.log('Posted update to Discord.');
+    const color = isMonday ? 0x6A8E3E : 0xE09F76;
+    const embed = makeEmbed(title, fields, color);
+
+    await postDiscordEmbed(embed);
+    console.log('Posted embed update to Discord.');
   }catch(e){
     console.error('Error:', e.message);
+    await notifyError(e);
     process.exit(1);
   }
 })();
