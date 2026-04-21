@@ -84,16 +84,29 @@ async function postDiscord(message){
 
     const msg = [];
     msg.push(`**OSRS Daily Update — ${PLAYER}**`);
-    msg.push(`Overall: ${formatNumber(od.latest.value)} XP (Level ${od.latest.rank ? '' : ''})`);
-    msg.push(`Yesterday: +${formatNumber(od.deltaYesterday)} XP`);
-    msg.push(`7-day: +${formatNumber(od.delta7days)} XP (avg ${formatNumber(Math.round(od.avgPerDay7))}/day)`);
-    msg.push(``);
-    msg.push(`Slayer: ${formatNumber(currentSlayerXp)} XP`);
-    msg.push(`Yesterday (slayer): +${formatNumber(sd.deltaYesterday)} XP`);
-    msg.push(`7-day (slayer): +${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`);
-    msg.push(`Remaining to 99 Slayer: ${formatNumber(remaining)} XP`);
-    msg.push(estDays ? `Estimated days to 99 (7-day avg): ${estDays} days — approx ${estDate}` : `Estimated days to 99: unknown (no recent progress)`);
-    msg.push(`https://wiseoldman.net/players/${PLAYER}`);
+    const isMonday = (new Date()).getUTCDay() === 1; // Monday=1
+    if(isMonday){
+      msg.push(`Overall: ${formatNumber(od.latest.value)} XP`);
+      msg.push(`Last 7 days: +${formatNumber(od.delta7days)} XP (avg ${formatNumber(Math.round(od.avgPerDay7))}/day)`);
+      msg.push(``);
+      msg.push(`Slayer: ${formatNumber(currentSlayerXp)} XP`);
+      msg.push(`Last 7 days (slayer): +${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`);
+      msg.push(`Remaining to 99 Slayer: ${formatNumber(remaining)} XP`);
+      msg.push(estDays ? `Estimated days to 99 (7-day avg): ${estDays} days — approx ${estDate}` : `Estimated days to 99: unknown (no recent progress)`);
+      msg.push(`Weekly summary generated for previous week.`);
+      msg.push(`https://wiseoldman.net/players/${PLAYER}`);
+    } else {
+      msg.push(`Overall: ${formatNumber(od.latest.value)} XP`);
+      msg.push(`Yesterday: +${formatNumber(od.deltaYesterday)} XP`);
+      msg.push(`7-day: +${formatNumber(od.delta7days)} XP (avg ${formatNumber(Math.round(od.avgPerDay7))}/day)`);
+      msg.push(``);
+      msg.push(`Slayer: ${formatNumber(currentSlayerXp)} XP`);
+      msg.push(`Yesterday (slayer): +${formatNumber(sd.deltaYesterday)} XP`);
+      msg.push(`7-day (slayer): +${formatNumber(sd.delta7days)} XP (avg ${formatNumber(Math.round(sd.avgPerDay7))}/day)`);
+      msg.push(`Remaining to 99 Slayer: ${formatNumber(remaining)} XP`);
+      msg.push(estDays ? `Estimated days to 99 (7-day avg): ${estDays} days — approx ${estDate}` : `Estimated days to 99: unknown (no recent progress)`);
+      msg.push(`https://wiseoldman.net/players/${PLAYER}`);
+    }
 
     await postDiscord(msg.join('\n'));
     console.log('Posted update to Discord.');
