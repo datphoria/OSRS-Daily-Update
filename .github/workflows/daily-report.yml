@@ -18,8 +18,7 @@ jobs:
           node-version: '18'
 
       - name: Install deps
-        run: npm install
-        working-directory: ./OSRS-Daily-Update
+        run: npm install --prefix ./OSRS-Daily-Update
 
       - name: Run report
         env:
@@ -27,4 +26,4 @@ jobs:
           WOM_PLAYER: TFrog98
           WOM_USER_AGENT: Datphoria
         run: |
-          node OSRS-Daily-Update/scripts/wiseoldman-report.js
+          node ./OSRS-Daily-Update/scripts/wiseoldman-report.js
