@@ -18,7 +18,9 @@ jobs:
           node-version: '18'
 
       - name: Install deps
-        run: npm install --prefix $GITHUB_WORKSPACE/OSRS-Daily-Update
+        run: |
+          cd $GITHUB_WORKSPACE/OSRS-Daily-Update
+          npm install
 
       - name: Run report
         env:
@@ -26,4 +28,5 @@ jobs:
           WOM_PLAYER: TFrog98
           WOM_USER_AGENT: Datphoria
         run: |
-          node $GITHUB_WORKSPACE/OSRS-Daily-Update/scripts/wiseoldman-report.js
+          cd $GITHUB_WORKSPACE/OSRS-Daily-Update
+          node scripts/wiseoldman-report.js
