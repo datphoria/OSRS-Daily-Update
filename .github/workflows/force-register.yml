@@ -1,0 +1,11 @@
+name: Force Register
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  force:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo
+        run: echo "force register"
