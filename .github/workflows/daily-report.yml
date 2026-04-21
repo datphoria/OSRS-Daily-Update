@@ -1,0 +1,30 @@
+name: OSRS Daily Update
+
+on:
+  schedule:
+    - cron: '30 7 * * *' # 07:30 UTC daily
+  workflow_dispatch: {}
+
+jobs:
+  daily-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: npm install
+        working-directory: ./OSRS-Daily-Update
+
+      - name: Run report
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          WOM_PLAYER: TFrog98
+          WOM_USER_AGENT: Datphoria
+        run: |
+          node OSRS-Daily-Update/scripts/wiseoldman-report.js
